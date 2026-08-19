@@ -23,6 +23,10 @@ def export_public_state(db, destination: Path | str) -> dict:
         "SELECT status,last_started_at,last_completed_at,next_run_at,last_error,"
         "lease_expires_at,consecutive_failures FROM jobs WHERE id='job_company_cycle'"
     ) or {}
+    remote_run = db.one(
+        "SELECT run_key,started_at,completed_at,status FROM job_runs "
+        "WHERE status='COMPLETED' ORDER BY completed_at DESC LIMIT 1"
+    )
     tasks = db.query(
         "SELECT id,business_unit_id,title,assigned_agent,status,result_json,created_at,"
         "started_at,completed_at FROM tasks ORDER BY created_at DESC LIMIT 250"
@@ -54,7 +58,10 @@ def export_public_state(db, destination: Path | str) -> dict:
         "schema_version": 1,
         "generated_at": datetime.now(UTC).isoformat(),
         "autonomy": {
-            "status": "RUNNING" if job.get("status") != "FAILED" else "RECOVERY",
+            "status": ("RECOVERY" if job.get("status") == "FAILED" else
+                       "RUNNING" if remote_run else "AWAITING_REMOTE_AUTH"),
+            "remote_verified": bool(remote_run),
+            "remote_run_key": remote_run.get("run_key") if remote_run else None,
             "last_cycle": job.get("last_completed_at"),
             "current_cycle": job.get("last_started_at") if job.get("status") == "RUNNING" else None,
             "next_cycle": job.get("next_run_at"),

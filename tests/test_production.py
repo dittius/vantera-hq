@@ -37,7 +37,8 @@ class ProductionRuntimeTests(unittest.TestCase):
         output = Path(self.temp.name) / "public" / "data" / "state.json"
         state = export_public_state(self.company.db, output)
         self.assertEqual(0, state["policy"]["autonomous_spend_limit_cents"])
-        self.assertEqual("RUNNING", state["autonomy"]["status"])
+        self.assertEqual("AWAITING_REMOTE_AUTH", state["autonomy"]["status"])
+        self.assertFalse(state["autonomy"]["remote_verified"])
         self.assertEqual(state, json.loads(output.read_text(encoding="utf-8")))
 
 
