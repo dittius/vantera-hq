@@ -64,6 +64,14 @@ class WorkflowTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             BusinessUnitFactory(self.company.db).create(opportunity)
 
+    def test_weak_trend_signal_cannot_become_a_business(self):
+        opportunity = Provider().discover()[0]
+        opportunity.signals["demand"] = 0.08
+        score, rationale, card = self.company.ventures.score(opportunity)
+        self.assertEqual(0, score)
+        self.assertIn("evidence is too weak", rationale)
+        self.assertEqual("insufficient_demand_evidence", card["hard_gate"])
+
     def test_pages_publication_and_distribution_are_persisted(self):
         self.company.cycle()
         publication = self.company.db.one("SELECT * FROM venture_publications")

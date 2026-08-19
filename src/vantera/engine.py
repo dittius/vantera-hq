@@ -93,7 +93,9 @@ class VentureEngine:
         if not path_ok:
             return 0.0, "Validation required: no executable Revenue Path for BUILD.", {"hard_gate": "revenue_path", "missing": missing}
         signals = opportunity.signals
-        if signals.get("demand", 0) < .04:
+        # A weak trend mention is not a business. BUILD requires meaningful observed
+        # problem demand in addition to a complete commercial path.
+        if signals.get("demand", 0) < .15:
             return 0.0, "Rejected: current public evidence is too weak to justify autonomous execution.", {"hard_gate": "insufficient_demand_evidence"}
         factors = {
             "zero_capital_feasibility": 1.0,
