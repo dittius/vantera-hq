@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "next build",
+    "build": "next build && cp -r out dist",
     "start": "next start"
   },
   "dependencies": {
-    "next": "15.5.7",
+    "next": "15.5.9",
     "react": "19.1.1",
     "react-dom": "19.1.1"
   }
