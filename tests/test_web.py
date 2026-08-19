@@ -29,7 +29,8 @@ class WebTests(unittest.TestCase):
             self.assertTrue((STATIC / name).is_file(), name)
         manifest = (STATIC / "manifest.webmanifest").read_text()
         self.assertIn('"display":"standalone"', manifest)
-        self.assertIn('"start_url":"/"', manifest)
+        self.assertIn('"start_url":"./"', manifest)
+        self.assertIn('"scope":"./"', manifest)
 
     def test_path_traversal_is_rejected(self):
         status = []
