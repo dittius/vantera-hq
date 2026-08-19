@@ -32,6 +32,13 @@ class ProductionRuntimeTests(unittest.TestCase):
         self.assertEqual("duplicate_delivery", second["skipped"])
         self.assertEqual(1, self.company.db.one("SELECT COUNT(*) count FROM job_runs")["count"])
 
+    def test_authenticated_remote_delivery_can_force_a_real_cycle(self):
+        self.company.db.initialize()
+        result = Scheduler(self.company).run_remote("manual-proof", force=True)
+        self.assertIn("cycle_id", result)
+        run = self.company.db.one("SELECT status FROM job_runs WHERE run_key='manual-proof'")
+        self.assertEqual("COMPLETED", run["status"])
+
     def test_export_is_valid_sanitized_atomic_state(self):
         Scheduler(self.company).run_once()
         output = Path(self.temp.name) / "public" / "data" / "state.json"

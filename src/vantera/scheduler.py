@@ -82,7 +82,7 @@ class Scheduler:
             return None
         return self.run_once()
 
-    def run_remote(self, run_key: str):
+    def run_remote(self, run_key: str, *, force: bool = False):
         """Idempotent durable entry point for retryable cloud-scheduler deliveries."""
         if not run_key:
             raise ValueError("A stable remote run key is required")
@@ -94,7 +94,7 @@ class Scheduler:
                         "result": json.loads(prior["result_json"]) if prior["result_json"] else None}
             conn.execute("INSERT INTO job_runs(run_key,job_id,status,started_at) VALUES(?,'job_company_cycle','ACCEPTED',?)", (run_key, now))
         try:
-            result = self.run_if_due()
+            result = self.run_once() if force else self.run_if_due()
             outcome = {"skipped": "not_due"} if result is None else result
             with self.company.db.connect() as conn:
                 conn.execute("UPDATE job_runs SET status='COMPLETED',completed_at=?,result_json=? WHERE run_key=?",

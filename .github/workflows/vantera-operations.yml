@@ -38,7 +38,12 @@ jobs:
       - name: Restore and migrate persistent state
         run: python -m vantera init
       - name: Run due autonomous cycle
-        run: python -m vantera remote-cycle
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python -m vantera remote-cycle --force
+          else
+            python -m vantera remote-cycle
+          fi
       - name: Export evidence-backed HQ state
         if: always()
         run: python -m vantera export --output public/data/state.json

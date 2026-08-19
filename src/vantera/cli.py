@@ -33,6 +33,7 @@ def main() -> None:
     sub.add_parser("status", help="Print compact machine-readable state")
     remote = sub.add_parser("remote-cycle", help="Run a due cycle using a durable delivery key")
     remote.add_argument("--run-key", default=os.getenv("VANTERA_RUN_KEY"))
+    remote.add_argument("--force", action="store_true", help="Force this authenticated delivery to run now")
     export = sub.add_parser("export", help="Export sanitized state for VANTERA HQ")
     export.add_argument("--output", default="public/data/state.json")
     web = sub.add_parser("serve", help="Start the Owner control panel")
@@ -53,7 +54,7 @@ def main() -> None:
         tasks = company.db.query("SELECT id,title,status FROM tasks")
         print(json.dumps({"units": units, "tasks": tasks}, indent=2))
     elif args.command == "remote-cycle":
-        print(json.dumps(Scheduler(company).run_remote(args.run_key), indent=2))
+        print(json.dumps(Scheduler(company).run_remote(args.run_key, force=args.force), indent=2))
     elif args.command == "export":
         state = export_public_state(company.db, Path(args.output))
         print(json.dumps({"output": str(Path(args.output).resolve()), "generated_at": state["generated_at"]}))
