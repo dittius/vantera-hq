@@ -97,13 +97,20 @@ def export_public_state(db, destination: Path | str) -> dict:
         "distribution_actions": distributions,
         "agent_profiles": db.query("SELECT agent_id,full_name,age,nationality,title,department,biography,education_json,career_json,skills_json,languages_json,traits_json,decision_style,objectives_json,cv_text,portrait_url,portrait_position,pixel_style_json FROM agent_profiles ORDER BY agent_id"),
         "agent_communications": db.query("SELECT sender_id,recipient_id,message_type,content,business_unit_id,created_at FROM agent_messages ORDER BY created_at DESC LIMIT 100"),
-        "agent_audit": db.query("SELECT id,agent_id,model,purpose,evidence_refs_json,tools_json,delegations_json,decision_summary,status,provider_response_id,input_tokens,output_tokens,total_tokens,started_at,completed_at FROM model_runs ORDER BY started_at DESC LIMIT 100"),
+        "agent_audit": db.query("SELECT id,agent_id,provider,model,purpose,evidence_refs_json,tools_json,delegations_json,decision_summary,status,request_status,provider_response_id,input_tokens,output_tokens,total_tokens,latency_ms,started_at,completed_at FROM model_runs ORDER BY started_at DESC LIMIT 100"),
+        "model_usage": db.query("SELECT usage_date,provider,request_count,input_tokens,output_tokens,updated_at FROM model_daily_usage ORDER BY usage_date DESC LIMIT 14"),
+        "model_queue": db.query("SELECT agent_id,purpose,status,attempts,next_attempt_at,created_at,updated_at FROM model_work_queue WHERE status!='COMPLETED' ORDER BY next_attempt_at LIMIT 50"),
         "ceo_chat": db.query("SELECT conversation_id,role,content,status,created_at FROM ceo_chat_messages ORDER BY created_at LIMIT 200"),
         "owner_directives": db.query("SELECT content,status,interpreted_action,created_at,applied_at FROM owner_directives ORDER BY created_at DESC LIMIT 100"),
     }
     for profile in state["agent_profiles"]:
         for key in ("education_json","career_json","skills_json","languages_json","traits_json","objectives_json","pixel_style_json"):
             profile[key.removesuffix("_json")] = _decoded(profile.pop(key))
+        latest = db.one("SELECT status FROM model_runs WHERE agent_id=? ORDER BY started_at DESC LIMIT 1", (profile["agent_id"],))
+        verified = db.one("SELECT 1 ok FROM model_runs WHERE agent_id=? AND status='COMPLETED' LIMIT 1", (profile["agent_id"],))
+        profile["ai_status"] = ("ACTIVE" if verified else
+                                "WAITING_FOR_MODEL_QUOTA" if latest and latest["status"] == "WAITING_FOR_MODEL_QUOTA" else
+                                "BLOCKED" if latest and latest["status"] == "BLOCKED" else "CONFIGURED")
     for audit in state["agent_audit"]:
         for key in ("evidence_refs_json","tools_json","delegations_json"):
             audit[key.removesuffix("_json")] = _decoded(audit.pop(key))

@@ -11,7 +11,7 @@ from .engine import CEOReport, Company
 from .web import serve
 from .scheduler import Scheduler
 from .production import export_public_state
-from .llm_agents import ExecutiveRuntime, run_multi_agent_review
+from .llm_agents import ExecutiveRuntime, run_multi_agent_review, resume_model_queue
 
 
 def build_company(offline: bool = False) -> Company:
@@ -41,6 +41,8 @@ def main() -> None:
     review.add_argument("--prompt", required=True)
     chat = sub.add_parser("ceo-chat", help="Send an Owner message to the real CEO model agent")
     chat.add_argument("--message", required=True)
+    sub.add_parser("agent-bootstrap", help="Run the one-time real-provider executive verification")
+    sub.add_parser("agent-queue", help="Resume genuine model work deferred by free-tier quota")
     web = sub.add_parser("serve", help="Start the Owner control panel")
     web.add_argument("--host")
     web.add_argument("--port", type=int)
@@ -67,6 +69,22 @@ def main() -> None:
         print(json.dumps(run_multi_agent_review(company.db, args.prompt), indent=2, ensure_ascii=False))
     elif args.command == "ceo-chat":
         print(json.dumps(ExecutiveRuntime(company.db).ceo_chat(args.message), indent=2, ensure_ascii=False))
+    elif args.command == "agent-queue":
+        print(json.dumps(resume_model_queue(company.db), indent=2, ensure_ascii=False))
+    elif args.command == "agent-bootstrap":
+        completed = company.db.one("SELECT COUNT(DISTINCT agent_id) n FROM model_runs WHERE status='COMPLETED'") or {"n": 0}
+        if completed["n"] >= 8:
+            print(json.dumps({"status": "ALREADY_VERIFIED", "active_agents": completed["n"]}))
+        else:
+            runtime = ExecutiveRuntime(company.db, cycle_limit=10)
+            connectivity = runtime.run("ceo", "Provider connectivity verification", "Confirm you can receive verified VANTERA company context.")
+            if connectivity["status"] != "COMPLETED":
+                print(json.dumps({"status": connectivity["status"], "connectivity": connectivity}, ensure_ascii=False))
+            else:
+                test_message = "What is VANTERA working on right now and what is your current priority?"
+                chat_result = runtime.ceo_chat(test_message, "owner-ceo-production-test")
+                review = run_multi_agent_review(company.db, "Develop materially different zero-capital commercial hypotheses, assess real customer pain, distribution, monetization and autonomous feasibility, then make a portfolio decision.", runtime.provider)
+                print(json.dumps({"status": review["status"], "connectivity": connectivity, "ceo_chat": chat_result, "review": review}, ensure_ascii=False))
     elif args.command == "serve":
         serve(company.db, args.host or company.settings.host, args.port or company.settings.port)
 

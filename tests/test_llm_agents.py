@@ -7,7 +7,8 @@ from pathlib import Path
 from vantera.agents import NullOpportunityProvider
 from vantera.config import Settings
 from vantera.engine import Company
-from vantera.llm_agents import ExecutiveRuntime, ModelResult, OpenAIResponsesProvider, run_multi_agent_review
+from vantera.llm_agents import (ExecutiveRuntime, GeminiProvider, ModelQuotaExhausted,
+    ModelResult, OpenAIResponsesProvider, select_provider, run_multi_agent_review)
 
 
 class RecordingProvider:
@@ -15,6 +16,17 @@ class RecordingProvider:
     def invoke(self, *, model, instructions, input_text):
         self.calls.append((model, instructions, input_text))
         return ModelResult(f"Executive output {len(self.calls)}", f"resp_{len(self.calls)}", model, 10, 5, 15)
+
+class QuotaProvider(RecordingProvider):
+    name = "gemini"
+    default_model = "gemini-2.5-flash-lite"
+    def invoke(self, **kwargs): raise ModelQuotaExhausted("quota")
+
+class FakeGemini(GeminiProvider):
+    def _request(self, url, body=None):
+        if body is None:
+            return {"models":[{"name":"models/gemini-2.5-flash-lite","supportedGenerationMethods":["generateContent"]}]}
+        return {"responseId":"g1","modelVersion":"gemini-2.5-flash-lite","candidates":[{"content":{"parts":[{"text":"Genuine remote output"}]}}],"usageMetadata":{"promptTokenCount":4,"candidatesTokenCount":3,"totalTokenCount":7}}
 
 
 class RealAgentRuntimeTests(unittest.TestCase):
@@ -61,6 +73,19 @@ class RealAgentRuntimeTests(unittest.TestCase):
         self.assertEqual("BLOCKED", run["status"])
         self.assertIsNone(run["provider_response_id"])
         self.assertIsNone(run["output_text"])
+
+    def test_gemini_discovers_stable_model_and_persists_provider_usage(self):
+        result = ExecutiveRuntime(self.company.db, FakeGemini("secret")).run("ceo", "Decision", "Choose")
+        self.assertEqual("COMPLETED", result["status"])
+        run = self.company.db.one("SELECT provider,model,request_status,total_tokens FROM model_runs")
+        self.assertEqual(("gemini","gemini-2.5-flash-lite","SUCCESS",7), tuple(run.values()))
+        self.assertEqual(1, self.company.db.one("SELECT request_count FROM model_daily_usage")["request_count"])
+
+    def test_quota_never_fakes_output_and_persists_retry_work(self):
+        result = ExecutiveRuntime(self.company.db, QuotaProvider()).run("cvo", "Discovery", "Find hypotheses")
+        self.assertEqual("WAITING_FOR_MODEL_QUOTA", result["status"])
+        self.assertIsNone(self.company.db.one("SELECT output_text FROM model_runs")["output_text"])
+        self.assertEqual("WAITING_FOR_MODEL_QUOTA", self.company.db.one("SELECT status FROM model_work_queue")["status"])
 
 
 if __name__ == "__main__": unittest.main()

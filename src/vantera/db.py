@@ -130,6 +130,17 @@ CREATE TABLE IF NOT EXISTS model_runs (
   provider_response_id TEXT, input_tokens INTEGER, output_tokens INTEGER, total_tokens INTEGER,
   error TEXT, started_at TEXT NOT NULL, completed_at TEXT
 );
+CREATE TABLE IF NOT EXISTS model_daily_usage (
+  usage_date TEXT NOT NULL, provider TEXT NOT NULL, request_count INTEGER NOT NULL DEFAULT 0,
+  input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL, PRIMARY KEY(usage_date,provider)
+);
+CREATE TABLE IF NOT EXISTS model_work_queue (
+  id TEXT PRIMARY KEY, dedupe_key TEXT NOT NULL UNIQUE, agent_id TEXT NOT NULL, purpose TEXT NOT NULL,
+  task TEXT NOT NULL, evidence_refs_json TEXT NOT NULL DEFAULT '[]', tools_json TEXT NOT NULL DEFAULT '[]',
+  delegations_json TEXT NOT NULL DEFAULT '[]', status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at TEXT NOT NULL, last_error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS ceo_chat_messages (
   id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL,
   model_run_id TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL,
@@ -186,6 +197,14 @@ class Database:
         for name, declaration in additions.items():
             if name not in columns:
                 conn.execute(f"ALTER TABLE jobs ADD COLUMN {name} {declaration}")
+        model_columns = {row["name"] for row in conn.execute("PRAGMA table_info(model_runs)")}
+        for name, declaration in {
+            "provider": "TEXT NOT NULL DEFAULT 'unknown'",
+            "latency_ms": "INTEGER",
+            "request_status": "TEXT",
+        }.items():
+            if name not in model_columns:
+                conn.execute(f"ALTER TABLE model_runs ADD COLUMN {name} {declaration}")
         conn.execute(
             "INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(1,?)",
             (utcnow(),),

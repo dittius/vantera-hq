@@ -37,7 +37,10 @@ jobs:
       VANTERA_TASK_LIMIT: "20"
       VANTERA_MAX_UNITS: "25"
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      VANTERA_AGENT_MODEL: ${{ vars.VANTERA_AGENT_MODEL || 'gpt-5-mini' }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      VANTERA_MODEL_DAILY_LIMIT: "40"
+      VANTERA_MODEL_CYCLE_LIMIT: "10"
+      VANTERA_MODEL_AGENT_DAILY_LIMIT: "6"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -60,10 +63,16 @@ jobs:
             # when GitHub starts a scheduled runner a few minutes late.
             python -m vantera remote-cycle --force
           fi
-      - name: Run real executive review when model authentication is available
+      - name: Resume real model work deferred by free-tier quota
+        run: python -m vantera agent-queue
+      - name: Automatically verify provider and real executive team after authentication
         if: github.event_name == 'workflow_dispatch' || github.event.schedule == '41 */6 * * *'
         run: |
-          python -m vantera agent-review --prompt "Identify materially different zero-capital commercial hypotheses from current evidence. Each must name a customer, painful problem, offer, distribution route, monetization route, and autonomous next action. Review current units and return explicit KEEP, PIVOT, TERMINATE, WAIT, VALIDATE, or BUILD decisions."
+          if [ -n "$GEMINI_API_KEY" ] || [ -n "$OPENAI_API_KEY" ]; then
+            python -m vantera agent-bootstrap
+          else
+            echo "Real-agent authentication is pending; deterministic fallback remains disabled."
+          fi
       - name: Deliver Owner message to real CEO agent
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.ceo_message != ''
         env:
