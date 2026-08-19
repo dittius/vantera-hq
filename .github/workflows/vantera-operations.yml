@@ -7,6 +7,11 @@ on:
     - cron: "41 */6 * * *"
     - cron: "7 5 * * *"
   workflow_dispatch:
+    inputs:
+      ceo_message:
+        description: "Owner message delivered to the real CEO model agent"
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -59,6 +64,11 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || github.event.schedule == '41 */6 * * *'
         run: |
           python -m vantera agent-review --prompt "Identify materially different zero-capital commercial hypotheses from current evidence. Each must name a customer, painful problem, offer, distribution route, monetization route, and autonomous next action. Review current units and return explicit KEEP, PIVOT, TERMINATE, WAIT, VALIDATE, or BUILD decisions."
+      - name: Deliver Owner message to real CEO agent
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.ceo_message != ''
+        env:
+          OWNER_MESSAGE: ${{ github.event.inputs.ceo_message }}
+        run: python -m vantera ceo-chat --message "$OWNER_MESSAGE"
       - name: Export evidence-backed HQ state
         if: always()
         run: python -m vantera export --output public/data/state.json
