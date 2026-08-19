@@ -8,6 +8,7 @@ from wsgiref.simple_server import make_server
 
 from .db import Database
 from .finance import FinancialLedger
+from .llm_agents import ExecutiveRuntime
 
 STATIC = Path(__file__).with_name("static")
 
@@ -28,6 +29,17 @@ class Dashboard:
         path = environ.get("PATH_INFO", "/")
         if path == "/api/state":
             return self._respond(start_response, json.dumps(self.state(), default=str).encode(), "application/json; charset=utf-8", cache="no-store")
+        if path == "/api/ceo-chat" and environ.get("REQUEST_METHOD") == "POST":
+            try:
+                length = min(int(environ.get("CONTENT_LENGTH") or 0), 8000)
+                payload = json.loads(environ["wsgi.input"].read(length) or b"{}")
+                message = str(payload.get("message") or "").strip()
+                if not message: raise ValueError("Message is required")
+                result = ExecutiveRuntime(self.db).ceo_chat(message)
+                status = "200 OK" if result.get("status") == "ANSWERED" else "503 Service Unavailable"
+                return self._respond(start_response, json.dumps(result).encode(), "application/json; charset=utf-8", status, "no-store")
+            except (ValueError, json.JSONDecodeError) as exc:
+                return self._respond(start_response, json.dumps({"error": str(exc)}).encode(), "application/json", "400 Bad Request", "no-store")
         name = "index.html" if path == "/" else path.lstrip("/")
         file = (STATIC / name).resolve()
         if STATIC.resolve() not in file.parents or not file.is_file():
@@ -72,10 +84,23 @@ class Dashboard:
             data = _json(report.pop("data_json", "{}"), {})
             report_rows.append(dict(report, data=data))
         scheduled = bool(job.get("next_run_at"))
+        profiles = self.db.query("SELECT agent_id,full_name,age,nationality,title,department,biography,education_json,career_json,skills_json,languages_json,traits_json,decision_style,objectives_json,cv_text,portrait_url,portrait_position,pixel_style_json FROM agent_profiles")
+        for profile in profiles:
+            for key in ("education_json","career_json","skills_json","languages_json","traits_json","objectives_json","pixel_style_json"):
+                profile[key.removesuffix("_json")] = _json(profile.pop(key), [])
+        audit = self.db.query("SELECT id,agent_id,model,purpose,tools_json,delegations_json,decision_summary,status,provider_response_id,input_tokens,output_tokens,total_tokens,started_at,completed_at FROM model_runs ORDER BY started_at DESC LIMIT 100")
+        for run in audit:
+            run["tools"] = _json(run.pop("tools_json"), [])
+            run["delegations"] = _json(run.pop("delegations_json"), [])
         return {"generated_at": datetime.now(UTC).isoformat(),
             "autonomy": {"status": "RUNNING" if job.get("status") in {"RUNNING", "IDLE", "RETRY"} and scheduled else "NOT SCHEDULED", "current_cycle": job.get("last_started_at") if job.get("status") == "RUNNING" else None, "last_cycle": job.get("last_started_at"), "next_cycle": job.get("next_run_at"), "last_success": job.get("last_completed_at"), "last_failure": job.get("last_error"), "currently_executing": [t["title"] for t in tasks if t["status"] in {"EXECUTING", "RUNNING"}]},
             "money": {"verified_revenue_cents": money.get("revenue", money.get("total_verified_cash", 0)), "verified_expenses_cents": money.get("expenses", 0), "verified_profit_cents": money.get("profit", money.get("total_verified_cash", 0)), "verified_cash_cents": money.get("total_verified_cash", 0), "spend_limit_cents": 0},
-            "units": units, "workers": workers, "opportunities": opportunities, "activity": activity, "reports": report_rows, "owner_action_required": "NONE"}
+            "units": units, "workers": workers, "opportunities": opportunities, "activity": activity, "reports": report_rows,
+            "agent_profiles": profiles,
+            "agent_communications": self.db.query("SELECT sender_id,recipient_id,message_type,content,business_unit_id,created_at FROM agent_messages ORDER BY created_at DESC LIMIT 100"),
+            "agent_audit": audit,
+            "ceo_chat": self.db.query("SELECT conversation_id,role,content,status,created_at FROM ceo_chat_messages ORDER BY created_at LIMIT 200"),
+            "owner_action_required": "NONE"}
 
     @staticmethod
     def _worker(agent, task, recent, unit_map, forced_unit=None):

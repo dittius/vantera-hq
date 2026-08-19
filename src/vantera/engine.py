@@ -11,6 +11,7 @@ from .config import Settings
 from .db import Database, utcnow
 from .domain import Opportunity
 from .finance import FinancialLedger
+from .executive_profiles import seed_profiles
 from .tools import ToolRegistry
 
 
@@ -321,6 +322,7 @@ class Company:
                              (agent.id, agent.name, agent.role, agent.reports_to, "ACTIVE", "{}", now))
             conn.execute("INSERT OR REPLACE INTO company_state VALUES('owner_role',?,?)", ("Executive Chairman (non-operational)", now))
         self.seed_tiktok_unit()
+        seed_profiles(self.db)
         self.reassess_portfolio()
 
     def reassess_portfolio(self) -> None:

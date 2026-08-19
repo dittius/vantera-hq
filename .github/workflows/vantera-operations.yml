@@ -31,6 +31,8 @@ jobs:
       VANTERA_CYCLE_INTERVAL: "21600"
       VANTERA_TASK_LIMIT: "20"
       VANTERA_MAX_UNITS: "25"
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      VANTERA_AGENT_MODEL: ${{ vars.VANTERA_AGENT_MODEL || 'gpt-5-mini' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,6 +55,10 @@ jobs:
             # when GitHub starts a scheduled runner a few minutes late.
             python -m vantera remote-cycle --force
           fi
+      - name: Run real executive review when model authentication is available
+        if: github.event_name == 'workflow_dispatch' || github.event.schedule == '41 */6 * * *'
+        run: |
+          python -m vantera agent-review --prompt "Identify materially different zero-capital commercial hypotheses from current evidence. Each must name a customer, painful problem, offer, distribution route, monetization route, and autonomous next action. Review current units and return explicit KEEP, PIVOT, TERMINATE, WAIT, VALIDATE, or BUILD decisions."
       - name: Export evidence-backed HQ state
         if: always()
         run: python -m vantera export --output public/data/state.json

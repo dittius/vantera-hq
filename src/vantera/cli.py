@@ -11,6 +11,7 @@ from .engine import CEOReport, Company
 from .web import serve
 from .scheduler import Scheduler
 from .production import export_public_state
+from .llm_agents import ExecutiveRuntime, run_multi_agent_review
 
 
 def build_company(offline: bool = False) -> Company:
@@ -36,6 +37,10 @@ def main() -> None:
     remote.add_argument("--force", action="store_true", help="Force this authenticated delivery to run now")
     export = sub.add_parser("export", help="Export sanitized state for VANTERA HQ")
     export.add_argument("--output", default="public/data/state.json")
+    review = sub.add_parser("agent-review", help="Run a genuine multi-executive model review")
+    review.add_argument("--prompt", required=True)
+    chat = sub.add_parser("ceo-chat", help="Send an Owner message to the real CEO model agent")
+    chat.add_argument("--message", required=True)
     web = sub.add_parser("serve", help="Start the Owner control panel")
     web.add_argument("--host")
     web.add_argument("--port", type=int)
@@ -58,6 +63,10 @@ def main() -> None:
     elif args.command == "export":
         state = export_public_state(company.db, Path(args.output))
         print(json.dumps({"output": str(Path(args.output).resolve()), "generated_at": state["generated_at"]}))
+    elif args.command == "agent-review":
+        print(json.dumps(run_multi_agent_review(company.db, args.prompt), indent=2, ensure_ascii=False))
+    elif args.command == "ceo-chat":
+        print(json.dumps(ExecutiveRuntime(company.db).ceo_chat(args.message), indent=2, ensure_ascii=False))
     elif args.command == "serve":
         serve(company.db, args.host or company.settings.host, args.port or company.settings.port)
 

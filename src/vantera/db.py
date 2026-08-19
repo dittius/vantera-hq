@@ -100,9 +100,48 @@ CREATE TABLE IF NOT EXISTS distribution_actions (
   evidence_json TEXT NOT NULL, executed_at TEXT NOT NULL,
   FOREIGN KEY(business_unit_id) REFERENCES business_units(id)
 );
+CREATE TABLE IF NOT EXISTS agent_profiles (
+  agent_id TEXT PRIMARY KEY, full_name TEXT NOT NULL, age INTEGER NOT NULL, nationality TEXT NOT NULL,
+  title TEXT NOT NULL, department TEXT NOT NULL, biography TEXT NOT NULL, education_json TEXT NOT NULL,
+  career_json TEXT NOT NULL, skills_json TEXT NOT NULL, languages_json TEXT NOT NULL,
+  traits_json TEXT NOT NULL, decision_style TEXT NOT NULL, responsibilities_json TEXT NOT NULL,
+  authority_limits_json TEXT NOT NULL, objectives_json TEXT NOT NULL, cv_text TEXT NOT NULL,
+  portrait_url TEXT NOT NULL, portrait_position TEXT NOT NULL, pixel_style_json TEXT NOT NULL,
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS agent_memories (
+  id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, memory_type TEXT NOT NULL, subject TEXT NOT NULL,
+  content TEXT NOT NULL, importance REAL NOT NULL DEFAULT 0.5, source_reference TEXT,
+  created_at TEXT NOT NULL, last_used_at TEXT, FOREIGN KEY(agent_id) REFERENCES agents(id)
+);
+CREATE TABLE IF NOT EXISTS agent_messages (
+  id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, sender_id TEXT NOT NULL, recipient_id TEXT NOT NULL,
+  message_type TEXT NOT NULL, content TEXT NOT NULL, task_id TEXT, business_unit_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS owner_directives (
+  id TEXT PRIMARY KEY, content TEXT NOT NULL, status TEXT NOT NULL, interpreted_action TEXT,
+  created_at TEXT NOT NULL, applied_at TEXT
+);
+CREATE TABLE IF NOT EXISTS model_runs (
+  id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, model TEXT NOT NULL, purpose TEXT NOT NULL,
+  input_summary TEXT NOT NULL, evidence_refs_json TEXT NOT NULL, tools_json TEXT NOT NULL,
+  delegations_json TEXT NOT NULL, output_text TEXT, decision_summary TEXT, status TEXT NOT NULL,
+  provider_response_id TEXT, input_tokens INTEGER, output_tokens INTEGER, total_tokens INTEGER,
+  error TEXT, started_at TEXT NOT NULL, completed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS ceo_chat_messages (
+  id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL,
+  model_run_id TEXT, status TEXT NOT NULL, created_at TEXT NOT NULL,
+  FOREIGN KEY(model_run_id) REFERENCES model_runs(id)
+);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_events_time ON events(occurred_at);
 CREATE INDEX IF NOT EXISTS idx_financial_time ON financial_records(occurred_at);
+CREATE INDEX IF NOT EXISTS idx_agent_memory ON agent_memories(agent_id,memory_type,created_at);
+CREATE INDEX IF NOT EXISTS idx_agent_messages ON agent_messages(conversation_id,created_at);
+CREATE INDEX IF NOT EXISTS idx_model_runs ON model_runs(agent_id,started_at);
+CREATE INDEX IF NOT EXISTS idx_ceo_chat ON ceo_chat_messages(conversation_id,created_at);
 """
 
 
