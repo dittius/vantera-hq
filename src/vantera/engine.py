@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 from .agents import OpportunityProvider, executive_agents
@@ -24,6 +25,9 @@ class BusinessUnitFactory:
     def create(self, opportunity: Opportunity, *, status: str = "VALIDATING") -> str:
         if opportunity.capital_required_cents > 0 or opportunity.human_operations_required:
             raise ValueError("Zero-capital and Owner non-involvement policies forbid this unit")
+        valid, missing = VentureEngine.revenue_path(opportunity)
+        if not valid:
+            raise ValueError(f"Executable Revenue Path is incomplete: {', '.join(missing)}")
         unit_id = new_id("bu")
         now = utcnow()
         workers = ["market-researcher", "asset-builder", "distribution-operator", "analyst"]
@@ -48,8 +52,13 @@ class BusinessUnitFactory:
                             "strategy": strategy}), "PLANNED", None, None, now, None, None))
             conn.execute("INSERT INTO tasks VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", (
                 new_id("task"), unit_id, "Publish validation website",
-                "Publish through a configured free hosting adapter.", "cmo", "external_action",
+                "Publish through VANTERA's GitHub Pages adapter.", "cmo", "publish_github_pages",
                 json.dumps({"unit_id": unit_id, "action": "publish_static_site"}),
+                "PLANNED", None, None, now, None, None))
+            conn.execute("INSERT INTO tasks VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+                new_id("task"), unit_id, "Distribute published venture",
+                "Make the owned public asset organically discoverable without spam or paid promotion.", "cmo", "distribute_static_seo",
+                json.dumps({"unit_id": unit_id, "public_url": f"https://dittius.github.io/vantera-hq/ventures/{unit_id}/"}),
                 "PLANNED", None, None, now, None, None))
         return unit_id
 
@@ -60,11 +69,29 @@ class VentureEngine:
         self.factory = BusinessUnitFactory(db)
 
     @staticmethod
+    def revenue_path(opportunity: Opportunity) -> tuple[bool, list[str]]:
+        research = opportunity.research
+        required = {
+            "offer": research.get("offer") or research.get("monetization_method") or opportunity.monetization_model,
+            "payer": research.get("payer") or opportunity.target_customer,
+            "reason_to_pay": research.get("reason_to_pay"),
+            "discovery": research.get("distribution_method"),
+            "value_capture": research.get("value_capture") or research.get("path_to_first_revenue"),
+            "autonomous_now": research.get("autonomous_now"),
+            "external_authentication": research.get("external_authentication"),
+        }
+        missing = [key for key, value in required.items() if value is None or value == ""]
+        return not missing, missing
+
+    @staticmethod
     def score(opportunity: Opportunity) -> tuple[float, str, dict[str, Any]]:
         if opportunity.capital_required_cents > 0:
             return 0.0, "Rejected: requires initial capital.", {"hard_gate": "initial_cash"}
         if opportunity.human_operations_required:
             return 0.0, "Rejected: requires human operational work.", {"hard_gate": "owner_operations"}
+        path_ok, missing = VentureEngine.revenue_path(opportunity)
+        if not path_ok:
+            return 0.0, "Validation required: no executable Revenue Path for BUILD.", {"hard_gate": "revenue_path", "missing": missing}
         signals = opportunity.signals
         if signals.get("demand", 0) < .04:
             return 0.0, "Rejected: current public evidence is too weak to justify autonomous execution.", {"hard_gate": "insufficient_demand_evidence"}
@@ -169,6 +196,13 @@ class TaskExecutor:
                     verified=result.verified)
             status = "VERIFIED" if result.executed and result.verified else "EXECUTED" if result.executed else "BLOCKED"
             self._finish(task["id"], status, {"summary": result.summary, "data": result.data}, evidence_id)
+            if status == "VERIFIED" and task["action_type"] == "publish_github_pages":
+                with self.db.connect() as conn:
+                    conn.execute("INSERT INTO venture_publications VALUES(?,?,?,?,?,?) ON CONFLICT(business_unit_id) DO UPDATE SET public_url=excluded.public_url,asset_path=excluded.asset_path,status=excluded.status,published_at=excluded.published_at,verified_at=excluded.verified_at",
+                                 (task["business_unit_id"], result.data["public_url"], result.data["asset_path"], "PUBLISHED", result.data["published_at"], utcnow()))
+            if status == "VERIFIED" and task["action_type"] == "distribute_static_seo":
+                with self.db.connect() as conn:
+                    conn.execute("INSERT INTO distribution_actions VALUES(?,?,?,?,?,?,?,?)", (new_id("dist"), task["business_unit_id"], result.data["channel"], result.data["action"], result.data["public_reference"], "EXECUTED", json.dumps(result.data), utcnow()))
             counts[status.lower()] += 1
             self.db.event("task_completed", task["assigned_agent"],
                           "VERIFIED RESULT" if status == "VERIFIED" else "EXECUTED",
@@ -273,7 +307,8 @@ class Company:
     def __init__(self, settings: Settings, provider: OpportunityProvider, tools: ToolRegistry | None = None):
         self.settings, self.db = settings, Database(settings.database_path)
         self.ventures = VentureEngine(self.db, provider, settings)
-        self.tasks = TaskExecutor(self.db, tools or ToolRegistry(settings.database_path.parent / "ventures"))
+        public_root = Path("public") if settings.database_path.parent.name == "production" else settings.database_path.parent / "public"
+        self.tasks = TaskExecutor(self.db, tools or ToolRegistry(settings.database_path.parent / "ventures", public_root))
 
     def initialize(self) -> None:
         self.db.initialize()
@@ -284,6 +319,32 @@ class Company:
                              (agent.id, agent.name, agent.role, agent.reports_to, "ACTIVE", "{}", now))
             conn.execute("INSERT OR REPLACE INTO company_state VALUES('owner_role',?,?)", ("Executive Chairman (non-operational)", now))
         self.seed_tiktok_unit()
+        self.reassess_portfolio()
+
+    def reassess_portfolio(self) -> None:
+        """Return legacy topic/resource units to commercial validation exactly once."""
+        rows = self.db.query("SELECT id,name,status FROM business_units WHERE id!='bu_tiktok_affiliate' AND status!='TERMINATED'")
+        for unit in rows:
+            is_legacy_resource = unit["name"].startswith("Resource for:") or "Resource Unit" in unit["name"]
+            if not is_legacy_resource or unit["status"] == "PIVOTING":
+                continue
+            with self.db.connect() as conn:
+                conn.execute("UPDATE business_units SET status='PIVOTING',updated_at=? WHERE id=?", (utcnow(), unit["id"]))
+            self.db.event("business_unit_pivoted", "ceo", "EXECUTED",
+                          {"reason": "Legacy resource concept lacks a sufficiently specific customer, offer, and independently executable value-capture path; commercial revalidation required."},
+                          "business_unit", unit["id"])
+        # Older cycles stopped at an unavailable generic host. GitHub Pages is now owned infrastructure.
+        blocked = self.db.query("SELECT id,business_unit_id FROM tasks WHERE action_type='external_action' AND status='BLOCKED'")
+        for task in blocked:
+            with self.db.connect() as conn:
+                conn.execute("UPDATE tasks SET action_type='publish_github_pages',status='PLANNED',result_json=NULL,evidence_id=NULL,started_at=NULL,completed_at=NULL WHERE id=?", (task["id"],))
+                exists = conn.execute("SELECT id FROM tasks WHERE business_unit_id=? AND action_type='distribute_static_seo'", (task["business_unit_id"],)).fetchone()
+                if not exists:
+                    conn.execute("INSERT INTO tasks VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+                        new_id("task"), task["business_unit_id"], "Distribute published venture",
+                        "Make the owned public asset organically discoverable without spam or paid promotion.", "cmo", "distribute_static_seo",
+                        json.dumps({"unit_id": task["business_unit_id"], "public_url": f"https://dittius.github.io/vantera-hq/ventures/{task['business_unit_id']}/"}),
+                        "PLANNED", None, None, utcnow(), None, None))
 
     def seed_tiktok_unit(self) -> None:
         if self.db.one("SELECT id FROM business_units WHERE id='bu_tiktok_affiliate'"):

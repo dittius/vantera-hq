@@ -2,7 +2,10 @@ name: VANTERA Autonomous Operations
 
 on:
   schedule:
-    - cron: "17 */4 * * *"
+    # Execute existing venture work hourly; deep discovery remains intentionally bounded.
+    - cron: "17 * * * *"
+    - cron: "41 */6 * * *"
+    - cron: "7 5 * * *"
   workflow_dispatch:
 
 permissions:
@@ -25,7 +28,7 @@ jobs:
       PYTHONPATH: src
       VANTERA_DB: production/vantera.db
       VANTERA_RUN_KEY: github-${{ github.run_id }}
-      VANTERA_CYCLE_INTERVAL: "14400"
+      VANTERA_CYCLE_INTERVAL: "21600"
       VANTERA_TASK_LIMIT: "20"
       VANTERA_MAX_UNITS: "25"
     steps:
@@ -37,12 +40,18 @@ jobs:
           python-version: "3.12"
       - name: Restore and migrate persistent state
         run: python -m vantera init
-      - name: Run due autonomous cycle
+      - name: Run scheduled autonomous workload
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             python -m vantera remote-cycle --force
+          elif [ "${{ github.event.schedule }}" = "17 * * * *" ]; then
+            python -m vantera.remote_jobs execution --run-key "$VANTERA_RUN_KEY-execution"
+          elif [ "${{ github.event.schedule }}" = "7 5 * * *" ]; then
+            python -m vantera.remote_jobs reporting --run-key "$VANTERA_RUN_KEY-reporting"
           else
-            python -m vantera remote-cycle
+            # Cron itself bounds deep discovery to four runs/day. Force avoids time drift
+            # when GitHub starts a scheduled runner a few minutes late.
+            python -m vantera remote-cycle --force
           fi
       - name: Export evidence-backed HQ state
         if: always()
@@ -52,7 +61,9 @@ jobs:
         run: |
           git config user.name "VANTERA CEO"
           git config user.email "actions@users.noreply.github.com"
-          git add -f production/vantera.db public/data/state.json
+          git add -f production/vantera.db
+          git add -A public
+          if [ -d production/ventures ]; then git add -A production/ventures; fi
           git diff --cached --quiet || git commit -m "ops: persist autonomous cycle $GITHUB_RUN_ID"
           git push
       - uses: actions/configure-pages@v5

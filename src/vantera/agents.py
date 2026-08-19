@@ -35,7 +35,7 @@ class NullOpportunityProvider:
 
 
 class PublicWebOpportunityProvider:
-    """Discovers current, source-linked problems and launches through free HN public search."""
+    """Discovers source-linked business problems across independent public sources."""
 
     endpoint = "https://hn.algolia.com/api/v1/search_by_date"
 
@@ -93,6 +93,12 @@ class PublicWebOpportunityProvider:
                 "initial_capital_required": 0, "mandatory_paid_costs": 0,
                 "legal_platform_constraints": "Respect source terms, copyright, robots rules, and community anti-spam policies",
                 "path_to_first_revenue": "Publish useful comparison data, earn organic discovery, then add eligible referral links or inbound sponsorship",
+                "offer": "A sourced comparison resource with a clearly disclosed referral or sponsorship placement",
+                "payer": "Relevant software vendors only after the resource demonstrates an audience",
+                "reason_to_pay": "Qualified category discovery with transparent attribution",
+                "value_capture": "Eligible disclosed referral links or inbound sponsorship after verified audience exists",
+                "autonomous_now": "Build, publish, index, measure, and maintain the sourced resource on owned infrastructure",
+                "external_authentication": "None for owned-site launch; third-party referral enrollment may later require account authentication",
             }
             opportunities.append(Opportunity(
                 opportunity_name, f"A current public signal suggests demand around {title}. Validate with a useful sourced resource.",
@@ -101,7 +107,46 @@ class PublicWebOpportunityProvider:
                          "speed_launch": .95, "speed_revenue": .45, "competition": .45,
                          "technical_difficulty": .15, "dependency_risk": .2, "scalability": .8},
                 evidence=evidence, research=research))
-        return opportunities
+        # GitHub public issues supply a second, problem-first signal independent of developer news.
+        # Failures are isolated so one public source can never stop the company cycle.
+        try:
+            request = urllib.request.Request(
+                "https://api.github.com/search/issues?" + urllib.parse.urlencode({
+                    "q": 'is:issue is:open \"looking for a tool\"', "sort": "comments", "per_page": min(5, self.limit)
+                }), headers={"User-Agent": "VANTERA/0.3 public-commercial-research", "Accept": "application/vnd.github+json"})
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                github_items = json.load(response).get("items", [])
+            for issue in github_items:
+                title = re.sub(r"\s+", " ", issue.get("title", "")).strip()
+                if not title or not issue.get("html_url"):
+                    continue
+                comments = int(issue.get("comments") or 0)
+                evidence = [{"url": issue["html_url"], "observed_at": datetime.now(UTC).isoformat(),
+                             "source": "GitHub public issue", "title": title, "comments": comments}]
+                research = {
+                    "problem": title, "target_users": "Teams publicly requesting this workflow capability",
+                    "demand_evidence": f"A public issue requested a tool and received {comments} comments.",
+                    "monetization_method": "Paid hosted convenience or support after free validation",
+                    "distribution_method": "Owned indexable tool page and relevant GitHub ecosystem discovery",
+                    "path_to_first_revenue": "Offer an optional hosted convenience tier only after verified usage",
+                    "offer": "A narrow self-service workflow tool", "payer": "Teams experiencing the documented workflow problem",
+                    "reason_to_pay": "Avoid repeated engineering time spent on the documented problem",
+                    "value_capture": "Optional hosted convenience or support tier; free static validation first",
+                    "autonomous_now": "Research, prototype, publish, document, and measure the owned static validation asset",
+                    "external_authentication": "None for owned-site validation; payments would require a future authenticated provider",
+                    "required_accounts": [], "required_human_involvement": "None for validation",
+                    "initial_capital_required": 0, "mandatory_paid_costs": 0,
+                }
+                opportunities.append(Opportunity(
+                    f"Workflow tool: {title[:68]}", f"Validate a narrow self-service solution to the publicly documented problem: {title}",
+                    research["target_users"], research["monetization_method"], "GitHub public issues API",
+                    signals={"demand": min(.7, .12 + comments / 30), "automation": .9, "distribution": .65,
+                             "margin": .9, "speed_launch": .8, "speed_revenue": .35, "competition": .5,
+                             "technical_difficulty": .25, "dependency_risk": .25, "scalability": .7},
+                    evidence=evidence, research=research))
+        except Exception:
+            pass
+        return opportunities[: self.limit]
 
 
 @dataclass

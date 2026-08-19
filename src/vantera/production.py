@@ -44,6 +44,8 @@ def export_public_state(db, destination: Path | str) -> dict:
         "SELECT id,report_date,body,data_json,created_at FROM reports "
         "ORDER BY report_date DESC LIMIT 90"
     )
+    publications = db.query("SELECT business_unit_id,public_url,status,published_at,verified_at FROM venture_publications ORDER BY published_at DESC")
+    distributions = db.query("SELECT business_unit_id,channel,action,public_reference,status,evidence_json,executed_at FROM distribution_actions ORDER BY executed_at DESC")
     for row in tasks:
         row["result"] = _decoded(row.pop("result_json"))
     for row in events:
@@ -53,6 +55,15 @@ def export_public_state(db, destination: Path | str) -> dict:
         row["profit_cents"] = row["revenue_cents"] - row["expense_cents"]
     for row in reports:
         row["data"] = _decoded(row.pop("data_json"))
+    for row in distributions:
+        row["evidence"] = _decoded(row.pop("evidence_json"))
+    publication_map = {row["business_unit_id"]: row for row in publications}
+    distribution_map = {}
+    for row in distributions:
+        distribution_map.setdefault(row["business_unit_id"], []).append(row)
+    for row in units:
+        row["publication"] = publication_map.get(row["id"])
+        row["distribution_actions"] = distribution_map.get(row["id"], [])
     current = next((task for task in tasks if task["status"] == "EXECUTING"), None)
     state = {
         "schema_version": 1,
@@ -75,14 +86,27 @@ def export_public_state(db, destination: Path | str) -> dict:
         "business_units": units,
         "opportunities": db.query(
             "SELECT o.id,o.name,o.thesis,o.score,o.status,o.rationale,o.created_at,o.evaluated_at,"
-            "COALESCE(json_array_length(r.evidence_json),0) evidence_count "
+            "COALESCE(json_array_length(r.evidence_json),0) evidence_count,r.research_json "
             "FROM opportunities o LEFT JOIN opportunity_research r ON r.opportunity_id=o.id "
             "ORDER BY o.created_at DESC LIMIT 250"
         ),
         "tasks": tasks,
         "events": events,
         "reports": reports,
+        "venture_publications": publications,
+        "distribution_actions": distributions,
     }
+    for opportunity in state["opportunities"]:
+        research = _decoded(opportunity.pop("research_json", None)) or {}
+        opportunity["revenue_path"] = {
+            "offer": research.get("offer") or research.get("monetization_method"),
+            "payer": research.get("payer") or research.get("target_users"),
+            "reason_to_pay": research.get("reason_to_pay"),
+            "discovery": research.get("distribution_method"),
+            "value_capture": research.get("value_capture") or research.get("path_to_first_revenue"),
+            "autonomous_now": research.get("autonomous_now"),
+            "external_authentication": research.get("external_authentication"),
+        }
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=destination.parent, prefix="state-", suffix=".json")

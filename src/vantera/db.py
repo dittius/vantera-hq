@@ -89,6 +89,17 @@ CREATE TABLE IF NOT EXISTS job_runs (
   started_at TEXT NOT NULL, completed_at TEXT, result_json TEXT,
   FOREIGN KEY(job_id) REFERENCES jobs(id)
 );
+CREATE TABLE IF NOT EXISTS venture_publications (
+  business_unit_id TEXT PRIMARY KEY, public_url TEXT NOT NULL, asset_path TEXT NOT NULL,
+  status TEXT NOT NULL, published_at TEXT NOT NULL, verified_at TEXT,
+  FOREIGN KEY(business_unit_id) REFERENCES business_units(id)
+);
+CREATE TABLE IF NOT EXISTS distribution_actions (
+  id TEXT PRIMARY KEY, business_unit_id TEXT NOT NULL, channel TEXT NOT NULL,
+  action TEXT NOT NULL, public_reference TEXT, status TEXT NOT NULL,
+  evidence_json TEXT NOT NULL, executed_at TEXT NOT NULL,
+  FOREIGN KEY(business_unit_id) REFERENCES business_units(id)
+);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_events_time ON events(occurred_at);
 CREATE INDEX IF NOT EXISTS idx_financial_time ON financial_records(occurred_at);

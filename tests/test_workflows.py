@@ -15,7 +15,10 @@ class Provider:
     def discover(self):
         return [
             Opportunity("Free Tool", "Automated utility", "Creators", "Affiliate", "test",
-                        signals={"demand": .9, "automation": 1, "distribution": .8, "margin": .8}),
+                        signals={"demand": .9, "automation": 1, "distribution": .8, "margin": .8},
+                        research={"reason_to_pay": "Qualified referrals", "distribution_method": "Owned SEO",
+                                  "path_to_first_revenue": "Disclosed affiliate referral", "autonomous_now": "Build and publish",
+                                  "external_authentication": "None for launch"}),
             Opportunity("Inventory Store", "Stock products", "Consumers", "Retail", "test",
                         capital_required_cents=1000, signals={"demand": 1, "automation": 1}),
             Opportunity("Owner Consultancy", "Owner delivers calls", "SMBs", "Fee", "test",
@@ -37,8 +40,8 @@ class WorkflowTests(unittest.TestCase):
         result = self.company.cycle()
         self.assertEqual(1, len(result["venture"]["created"]))
         self.assertEqual(2, result["venture"]["rejected"])
-        self.assertGreaterEqual(result["tasks"]["verified"], 1)
-        self.assertGreaterEqual(result["tasks"]["blocked"], 1)
+        self.assertGreaterEqual(result["tasks"]["verified"], 3)
+        self.assertEqual(0, result["tasks"]["blocked"])
         self.assertEqual("NONE", result["report"]["owner_action_required"])
         self.assertEqual(0, result["report"]["money"]["total_verified_cash"])
         self.assertTrue(self.company.db.one("SELECT id FROM reports"))
@@ -51,6 +54,22 @@ class WorkflowTests(unittest.TestCase):
         ):
             with self.assertRaises(ValueError):
                 factory.create(opportunity)
+
+    def test_revenue_path_is_hard_gate_before_build(self):
+        opportunity = Opportunity("Interesting trend", "Trending topic", "Readers", "Maybe ads", "test",
+                                  signals={"demand": 1, "automation": 1})
+        score, _, card = self.company.ventures.score(opportunity)
+        self.assertEqual(0, score)
+        self.assertEqual("revenue_path", card["hard_gate"])
+        with self.assertRaises(ValueError):
+            BusinessUnitFactory(self.company.db).create(opportunity)
+
+    def test_pages_publication_and_distribution_are_persisted(self):
+        self.company.cycle()
+        publication = self.company.db.one("SELECT * FROM venture_publications")
+        distribution = self.company.db.one("SELECT * FROM distribution_actions")
+        self.assertTrue(publication["public_url"].startswith("https://dittius.github.io/vantera-hq/ventures/"))
+        self.assertEqual("EXECUTED", distribution["status"])
 
     def test_financial_ledger_rejects_unverified_evidence(self):
         ledger = FinancialLedger(self.company.db)
