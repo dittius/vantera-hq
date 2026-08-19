@@ -11,3 +11,4 @@ work/
 outputs/
 .next/
 node_modules/
+dist/
