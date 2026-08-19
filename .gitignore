@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+vantera.db
+!production/vantera.db
+*.db-shm
+*.db-wal
+.env
+work/
+outputs/
+.next/
+node_modules/

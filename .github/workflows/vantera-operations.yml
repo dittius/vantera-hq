@@ -1,0 +1,58 @@
+name: VANTERA Autonomous Operations
+
+on:
+  schedule:
+    - cron: "17 */4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: vantera-production
+  cancel-in-progress: false
+
+jobs:
+  operate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      PYTHONPATH: src
+      VANTERA_DB: production/vantera.db
+      VANTERA_RUN_KEY: github-${{ github.run_id }}
+      VANTERA_CYCLE_INTERVAL: "14400"
+      VANTERA_TASK_LIMIT: "20"
+      VANTERA_MAX_UNITS: "25"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Restore and migrate persistent state
+        run: python -m vantera init
+      - name: Run due autonomous cycle
+        run: python -m vantera remote-cycle
+      - name: Export evidence-backed HQ state
+        if: always()
+        run: python -m vantera export --output public/data/state.json
+      - name: Persist database and public state
+        if: always()
+        run: |
+          git config user.name "VANTERA CEO"
+          git config user.email "actions@users.noreply.github.com"
+          git add -f production/vantera.db public/data/state.json
+          git diff --cached --quiet || git commit -m "ops: persist autonomous cycle $GITHUB_RUN_ID"
+          git push
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deployment
+        uses: actions/deploy-pages@v4
